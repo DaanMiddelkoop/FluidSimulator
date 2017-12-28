@@ -1,0 +1,265 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+	<head>
+		<meta charset="utf-8">
+
+		<title>Waver2</title>
+		<meta name="description" content="The HTML5 Herald">
+	</head>
+
+	<body style="background-color: black; width: 100%; overflow: hidden;color: #fff">
+		<canvas id="canvas" width="1920" height="1080" style="width: 120%;"></canvas>
+		<script src="colormix-2.0.0.js"></script>
+		<script>
+			var canvas = document.getElementById("canvas");
+			var context = canvas.getContext("2d")
+
+			nx = 41;
+			ny = 41;
+
+			nt = 5;
+			nit = 50;
+
+			c = 1;
+			dx = 2 / (nx - 1)
+			dy = 2 / (ny - 1)
+
+			size = 12;
+
+			rho = 1
+			nu = 0.04
+			dt = 0.005;
+
+			nsteps = 0;
+
+			u = []
+			v = []
+			p = []
+
+			for (i = 0; i < nx; i++) {
+				u[i] = [];
+				v[i] = [];
+				p[i] = [];
+				for (j = 0; j < ny; j++) {
+					u[i][j] = 0;
+					v[i][j] = 0;
+					p[i][j] = 0;
+				}
+			}
+
+			step(p);
+
+			function build_up_b(i, j, rho, dt, u, v, dx, dy) {
+				return (rho * (1 / dt * 
+					   ((u[i][j + 1] - u[i][j - 1]) / 
+					   	(2 * dx) + (v[i + 1][j] - v[i - 1][j]) / (2 * dy)) - 
+					   square((u[i][j + 1] - u[i][j - 1]) / (2 * dx)) -
+					     2 * ((u[i + 1][j] - u[i - 1][j]) / (2 * dy) * 
+					     	  (v[i][j + 1] - v[i][j - 1]) / (2 * dx)) -
+					         square((v[i + 1][j] - v[i - 1][j]) / (2 * dy))))
+
+				/*(1 / dt) * 
+					(
+						((u[i + 1][j] - u[i - 1][j]) / (2 * dx)) +
+						((v[i][j + 1] - v[i][j - 1]) / (2 * dy))
+					) -
+					(
+						((u[i + 1][j] - u[i - 1][j]) / (2 * dx)) *
+						((u[i + 1][j] - u[i - 1][j]) / (2 * dx))
+					) - 
+					(
+						2 * ((u[i][j + 1] - u[i][j - 1]) / (2 * dy)) *
+							((v[i + 1][j] - v[i - 1][j]) / (2 * dx))
+					) -
+					(
+						((v[i][j + 1] - v[i][j - 1]) / (2 * dy)) *
+						((v[i][j + 1] - v[j][j - 1]) / (2 * dy))
+					)*/
+			}
+
+			function pressure_poisson_partial(i, j, b, pn, dx, dy, rho) {
+				return (((pn[i][j + 1] + pn[i][j - 1]) * square(dy) + 
+						 (pn[i + 1][j] + pn[i - 1][j]) * square(dx)) / 
+						 (2 * (square(dx) + square(dy))) - 
+						 square(dx) * square(dy) / (2 * (square(dx) + square(dy))) * 
+						 b[i][j])
+					/*(
+						(
+							(
+								((pn[i + 1][j] + pn[i - 1][j]) * square(dy)) +
+								((pn[i][j + 1] + pn[i][j - 1]) * square(dx))
+
+							) / 
+							(
+								2 * (square(dx) + square(dy))
+							)
+
+						) - (rho * square(dx) * square(dy)) / (2 * (square(dx) + square(dy)))
+					) * b[i][j];*/
+			}
+
+			function pressure_poisson_total(p, dx, dy, rho, dt, u, v, nx, ny) {
+				b = [] // b is part of possion that is independend of pressure and thus will not change within the iterations.
+				for (i = 0; i < nx; i++) {
+					b[i] = []
+					for (j = 0; j < ny; j ++) {
+						if (i > 0 && j > 0 && i < nx - 1 && j < ny - 1) {
+							b[i][j] = minmax(build_up_b(i, j, rho, dt, u, v, dx, dy));
+						} else {
+							b[i][j] = 0;
+						}
+					}
+				}
+
+				//console.log("WHAT?")
+
+				for (q = 0; q < nit; q++) {
+					pn = p
+
+					//console.log("WHAT2F")
+					//console.log(nx, ny)
+
+					// Calculate every part of pressure field.
+					for (i = 1; i < nx - 1; i++) {
+						for (j = 1; j < ny - 1; j ++) {
+							//console.log("WHAT3LLLLL")
+							p[i][j] = minmax(pressure_poisson_partial(i, j, b, pn, dx, dy, rho));
+							//console.log(p[i][j]);
+						}
+					}
+					for (i = 0; i < nx; i++) {
+						p[i][ny - 1] = p[i][ny - 2];
+					}
+
+					for (j = 0; j < ny; j++) {
+						p[0][j] = p[1][j];
+					}
+
+					for (i = 0; i < nx; i++) {
+						p[i][0] = p[i][1];
+					}
+
+					for (j = 0; j < ny; j++) {
+						p[nx - 1][j] = 0
+					}
+
+
+				}
+				return p;
+			}
+
+			function calculate_u(i, j, un, vn, rho, dx, dy, dt, p) {
+				number = (un[i][j] - 
+					 un[i][j] * dt / dx * 
+					(un[i][j] - un[i][j - 1]) - 
+					 vn[i][j] * dt / dy * 
+					(un[i][j] - un[i - 1][j]) - 
+					 dt / (2 * rho * dx) * (p[i][j + 1] - p[i][j - 1]) + 
+					 nu * (dt / square(dx) * 
+					(un[i][j + 1] - 2 * un[i][j] + un[i][j - 1]) + 
+					 dt / square(dy) * 
+					(un[i + 1][i] - 2 * un[i][j] + un[i - 1][j])));
+				return number;
+			}
+
+			function calculate_v(i, j, un, vn, rho, dx, dy, dt, p) {
+				return (vn[i][j] - 
+					 	un[i][j] * dt / dx * 
+					   (vn[i][j] - vn[i][j - 1]) - 
+					    vn[i][j] * dt / dy * 
+					   (vn[i][j] - vn[i - 1][j]) - 
+					    dt / (2 * rho * dy) * (p[i + 1][j] - p[i - 1][j]) +
+					    nu * (dt / square(dx) *
+					   (vn[i][j + 1] - 2 * vn[i][j] + vn[i][j - 1]) +
+					    dt / square(dy) *
+					   (vn[i + 1][j] - 2 * vn[i][j] + vn[i - 1][j])))
+			}
+
+			function step(p) {
+				//for (n = 0; n < nt; n++) {
+					nsteps += 1;
+					console.log("Step: ", nsteps);
+					p = pressure_poisson_total(p, dx, dy, rho, dt, u, v, nx, ny);
+
+					un = u;
+					vn = v;
+
+
+					for (i = 1; i < nx - 1; i++) {
+						for (j = 1; j < ny - 1; j++) {
+							u[i][j] = minmax(calculate_u(i, j, un, vn, rho, dx, dy, dt, p));
+							v[i][j] = minmax(calculate_v(i, j, un, vn, rho, dx, dy, dt, p));
+						}
+					}
+
+					// Set cavity sides correctly
+					for (i = 0; i < nx; i++) {
+						u[i][0] = 0;
+						u[i][ny - 1] = 0; // Give top of cavity a direction.
+						v[i][0] = 0;
+						v[i][ny - 1] = 0;
+					}
+
+					//console.log("u", u);
+					//console.log("v", v);
+					//console.log("p", p);
+
+					for (j = 0; j < ny; j++) {
+						u[0][j] = 0;
+						if (j > 13 && j < nx - 14)
+							u[Math.round(nx / 2)][j] = 1;
+						u[nx - 1][j] = 0;
+						v[0][j] = 0;
+						v[nx - 1][j] = 0;
+					}
+
+
+					
+				//}
+				draw();
+			}
+
+			function draw() {
+				for (i = 0; i < nx; i++) {
+					for (j = 0; j < ny; j++) {
+						context.beginPath();
+						context.rect(i * size, j * size, size, size);
+						context.fillStyle = new ColorMix.Color(u[i][j] * 255, 0, -u[i][j] * 255);
+						context.fill();
+					}
+
+					for (j = 0; j < ny; j++) {
+						context.beginPath();
+						context.rect(i * size + 500, j * size, size, size);
+						context.fillStyle = new ColorMix.Color(v[i][j] * 255, 0, -v[i][j] * 255);
+						context.fill();
+					}
+
+					for (j = 0; j < ny; j++) {
+						context.beginPath();
+						context.rect(i * size + 1000, j * size, size, size);
+						context.fillStyle = new ColorMix.Color(p[i][j] * 255, 0, -p[i][j] * 255);
+						context.fill();
+					}
+				}
+
+				sleep(5).then(() => {
+					step(p);
+				});
+			}
+
+			function minmax(x) {
+				return x
+				return Math.min(20000000, Math.max(-20000000, x));
+			}
+
+			function sleep(ms) {
+			  return new Promise(resolve => setTimeout(resolve, ms));
+			}
+
+			function square(x) {
+				return x * x;
+			}
+		</script>
+	</body>
+</html>
